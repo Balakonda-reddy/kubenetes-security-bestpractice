@@ -1,0 +1,64 @@
+# ╭──────────────────────────────────────────────────────────────────╮
+# │ NOTE: This is a reference implementation for educational purposes │
+# │ Please test thoroughly before applying to production environments │
+# ╰──────────────────────────────────────────────────────────────────╯
+
+# default-deny-policy.yaml
+# Apply this to each namespace to block all traffic by default
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: default # Change this for each namespace
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+---
+# allow-specific-app-traffic.yaml
+# Example of allowing traffic between specific applications
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-to-backend
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: frontend
+    ports:
+    - protocol: TCP
+      port: 8080
+---
+# allow-monitoring.yaml
+# Allow monitoring tools to access metrics endpoints
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-monitoring
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: monitored-app
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+      podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - protocol: TCP
+      port: 9090
