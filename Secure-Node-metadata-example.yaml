@@ -1,0 +1,74 @@
+# ╭──────────────────────────────────────────────────────────────────╮
+# │ NOTE: This is a reference implementation for educational purposes │
+# │ Please test thoroughly before applying to production environments │
+# ╰──────────────────────────────────────────────────────────────────╯
+
+# iptables-config-daemonset.yaml
+# DaemonSet to apply iptables rules blocking metadata access
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: metadata-blocker
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      name: metadata-blocker
+  template:
+    metadata:
+      labels:
+        name: metadata-blocker
+    spec:
+      hostNetwork: true
+      containers:
+      - name: iptables-config
+        image: alpine:3.14
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Adding iptables rules to block metadata access"
+          apk add --no-cache iptables
+          iptables -A OUTPUT -d 169.254.169.254 -j DROP
+          # Keep container running
+          sleep infinity
+        securityContext:
+          privileged: true
+---
+# metadata-blocking-network-policy.yaml
+# NetworkPolicy to block access to metadata endpoints
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: block-metadata-access
+  namespace: default
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 169.254.169.254/32
+---
+# kiam-role-example.yaml
+# Example of using kiam for AWS instance role management
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: app-service-account
+  namespace: app-namespace
+  annotations:
+    iam.amazonaws.com/role: app-required-role
+---
+# gcp-workload-identity-example.yaml
+# Example of GCP Workload Identity configuration
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: app-gcp-service-account
+  namespace: app-namespace
+  annotations:
+    iam.gke.io/gcp-service-account: gcp-service-account@project.iam.gserviceaccount.com
