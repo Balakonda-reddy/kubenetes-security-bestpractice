@@ -1,0 +1,68 @@
+# ╭──────────────────────────────────────────────────────────────────╮
+# │ NOTE: This is a reference implementation for educational purposes │
+# │ Please test thoroughly before applying to production environments │
+# ╰──────────────────────────────────────────────────────────────────╯
+
+# etcd-encryption.yaml
+# Implements CIS Benchmark 2.1 - Encrypt etcd data at rest
+apiVersion: apiserver.config.k8s.io/v1
+kind: EncryptionConfiguration
+metadata:
+  name: encryption-config
+spec:
+  resources:
+    - resources:
+        - secrets
+      providers:
+        - aescbc:
+            keys:
+              - name: key1
+                secret: <base64-encoded-key>
+        - identity: {}
+---
+# kube-apiserver-secure-config.yaml
+# Implements multiple CIS Benchmarks for API server
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kube-apiserver
+  namespace: kube-system
+spec:
+  containers:
+  - name: kube-apiserver
+    image: k8s.gcr.io/kube-apiserver:v1.25.0
+    command:
+    - kube-apiserver
+    - --anonymous-auth=false
+    - --audit-log-path=/var/log/audit.log
+    - --audit-log-maxage=30
+    - --audit-log-maxbackup=10
+    - --audit-log-maxsize=100
+    - --authorization-mode=Node,RBAC
+    - --client-ca-file=/etc/kubernetes/pki/ca.crt
+    - --enable-admission-plugins=NodeRestriction,PodSecurityPolicy
+    - --encryption-provider-config=/etc/kubernetes/encryption/encryption-config.yaml
+    - --etcd-cafile=/etc/kubernetes/pki/etcd/ca.crt
+    - --etcd-certfile=/etc/kubernetes/pki/apiserver-etcd-client.crt
+    - --etcd-keyfile=/etc/kubernetes/pki/apiserver-etcd-client.key
+    - --tls-cert-file=/etc/kubernetes/pki/apiserver.crt
+    - --tls-private-key-file=/etc/kubernetes/pki/apiserver.key
+---
+# kubelet-secure-config.yaml
+# Secure kubelet configuration
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+authentication:
+  anonymous:
+    enabled: false
+  webhook:
+    enabled: true
+  x509:
+    clientCAFile: /etc/kubernetes/pki/ca.crt
+authorization:
+  mode: Webhook
+clusterDomain: "cluster.local"
+protectKernelDefaults: true
+readOnlyPort: 0
+tlsCertFile: /etc/kubernetes/pki/kubelet.crt
+tlsPrivateKeyFile: /etc/kubernetes/pki/kubelet.key
