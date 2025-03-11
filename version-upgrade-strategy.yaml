@@ -1,0 +1,101 @@
+# ╭──────────────────────────────────────────────────────────────────╮
+# │ NOTE: This is a reference implementation for educational purposes │
+# │ Please test thoroughly before applying to production environments │
+# ╰──────────────────────────────────────────────────────────────────╯
+
+# upgrade-preparation-script.yaml
+# ConfigMap with upgrade preparation script
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: k8s-upgrade-preparation
+  namespace: kube-system
+data:
+  prepare-upgrade.sh: |
+    #!/bin/bash
+    # Script to prepare for Kubernetes upgrade
+    
+    # Check current version
+    CURRENT_VERSION=$(kubectl version --short | grep 'Server Version' | awk '{print $3}')
+    echo "Current Kubernetes version: $CURRENT_VERSION"
+    
+    # Check for pods that might be affected by the upgrade
+    echo "Checking for deprecated API usage..."
+    kubectl get pods --all-namespaces -o json | jq '.items[] | 
+      select(.apiVersion | contains("beta")) | 
+      "Deprecated API usage in \(.metadata.namespace)/\(.metadata.name)"'
+    
+    # Check node readiness
+    echo "Checking node status before upgrade..."
+    kubectl get nodes
+    
+    # Verify cluster health
+    echo "Verifying control plane health..."
+    kubectl get componentstatuses
+    
+    # Check for critical workloads
+    echo "Checking for pods without PodDisruptionBudget..."
+    for ns in $(kubectl get ns -o jsonpath='{.items[*].metadata.name}'); do
+      kubectl get deployments -n $ns -o json | jq '.items[] | 
+        select(.spec.replicas > 1) | 
+        "Deployment \(.metadata.namespace)/\(.metadata.name) with replicas \(.spec.replicas)"' 
+    done
+    
+    echo "Don't forget to review the release notes for the target version!"
+    echo "Upgrade readiness check complete."
+---
+# pod-disruption-budget.yaml
+# Example PDB to ensure availability during upgrades
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: critical-app-pdb
+  namespace: production
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: critical-app
+---
+# control-plane-upgrade-script.yaml
+# ConfigMap with control plane upgrade script
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: control-plane-upgrade
+  namespace: kube-system
+data:
+  upgrade-control-plane.sh: |
+    #!/bin/bash
+    # Script to upgrade Kubernetes control plane components
+    
+    # Remember to check version compatibility before running!
+    TARGET_VERSION="1.26.0"
+    
+    # Update package repositories
+    apt update
+    
+    # Show available kubeadm versions
+    apt-cache policy kubeadm
+    
+    # Install specific kubeadm version
+    apt-get install -y --allow-change-held-packages kubeadm=$TARGET_VERSION-00
+    
+    # Verify kubeadm version
+    kubeadm version
+    
+    # Plan the upgrade
+    kubeadm upgrade plan
+    
+    # Apply the upgrade
+    kubeadm upgrade apply v$TARGET_VERSION
+    
+    # Upgrade kubelet and kubectl
+    apt-get install -y --allow-change-held-packages kubelet=$TARGET_VERSION-00 kubectl=$TARGET_VERSION-00
+    
+    # Restart kubelet
+    systemctl daemon-reload
+    systemctl restart kubelet
+    
+    # Verify upgraded version
+    kubectl version
