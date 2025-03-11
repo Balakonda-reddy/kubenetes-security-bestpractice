@@ -1,0 +1,86 @@
+# ╭──────────────────────────────────────────────────────────────────╮
+# │ NOTE: This is a reference implementation for educational purposes │
+# │ Please test thoroughly before applying to production environments │
+# ╰──────────────────────────────────────────────────────────────────╯
+
+# api-server-config.yaml
+# API server configuration with IP whitelisting
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kube-apiserver
+  namespace: kube-system
+spec:
+  containers:
+  - name: kube-apiserver
+    image: k8s.gcr.io/kube-apiserver:v1.25.0
+    command:
+    - kube-apiserver
+    - --allow-privileged=true
+    - --anonymous-auth=false
+    - --authorization-mode=Node,RBAC
+    - --client-ca-file=/etc/kubernetes/pki/ca.crt
+    - --enable-admission-plugins=NodeRestriction
+    - --enable-bootstrap-token-auth=true
+    - --tls-cert-file=/etc/kubernetes/pki/apiserver.crt
+    - --tls-private-key-file=/etc/kubernetes/pki/apiserver.key
+    # IP whitelisting using API server flags
+    - --event-ttl=1h
+    - --kubelet-client-certificate=/etc/kubernetes/pki/apiserver-kubelet-client.crt
+    - --kubelet-client-key=/etc/kubernetes/pki/apiserver-kubelet-client.key
+    - --runtime-config=api/all=true
+    - --service-account-key-file=/etc/kubernetes/pki/sa.pub
+    - --service-account-signing-key-file=/etc/kubernetes/pki/sa.key
+    - --service-account-issuer=https://kubernetes.default.svc.cluster.local
+    - --service-cluster-ip-range=10.96.0.0/12
+    - --tls-min-version=VersionTLS12
+    - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+---
+# audit-policy.yaml
+# Comprehensive API server audit policy
+apiVersion: audit.k8s.io/v1
+kind: Policy
+rules:
+# Log all requests at the Metadata level
+- level: Metadata
+  omitStages:
+  - RequestReceived
+# Audit authentication attempts
+- level: RequestResponse
+  resources:
+  - group: ""
+    resources: ["users", "groups"]
+# Audit all authentication requests
+- level: RequestResponse
+  users: ["*"]
+  verbs: ["create"]
+  resources:
+  - group: authentication.k8s.io
+    resources: ["tokenreviews"]
+# Audit changes to configmaps or secrets
+- level: Request
+  resources:
+  - group: ""
+    resources: ["configmaps", "secrets"]
+  verbs: ["create", "update", "patch", "delete"]
+---
+# oidc-api-server-config.yaml
+# API server with OIDC authentication
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kube-apiserver-oidc
+  namespace: kube-system
+spec:
+  containers:
+  - name: kube-apiserver
+    image: k8s.gcr.io/kube-apiserver:v1.25.0
+    command:
+    - kube-apiserver
+    # Basic API server config omitted for brevity
+    # OIDC Authentication configuration
+    - --oidc-issuer-url=https://auth.example.com
+    - --oidc-client-id=kubernetes
+    - --oidc-username-claim=email
+    - --oidc-groups-claim=groups
+    - --oidc-ca-file=/etc/kubernetes/pki/oidc-ca.crt
