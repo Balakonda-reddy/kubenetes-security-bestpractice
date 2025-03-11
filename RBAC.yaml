@@ -1,0 +1,70 @@
+# ╭──────────────────────────────────────────────────────────────────╮
+# │ NOTE: This is a reference implementation for educational purposes │
+# │ Please test thoroughly before applying to production environments │
+# ╰──────────────────────────────────────────────────────────────────╯
+
+# namespace-specific-role.yaml
+# Create a role limited to specific namespace and actions
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: app-namespace
+  name: pod-reader
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+---
+# bind-role-to-service-account.yaml
+# Bind the role to a specific service account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: read-pods
+  namespace: app-namespace
+subjects:
+- kind: ServiceAccount
+  name: pod-reader-account
+  namespace: app-namespace
+roleRef:
+  kind: Role
+  name: pod-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+# specific-deployment-role.yaml
+# Highly specific role for deployment management
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: app-namespace
+  name: deployment-manager
+rules:
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  resourceNames: ["app-deployment"] # Only affects specific deployment
+  verbs: ["get", "update", "patch"]
+---
+# audit-rbac-script.yaml
+# ConfigMap containing a script to audit RBAC permissions
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rbac-audit-script
+  namespace: security
+data:
+  audit-rbac.sh: |
+    #!/bin/bash
+    # Script to audit RBAC permissions across the cluster
+    
+    echo "=== Cluster Roles with wildcards (potential security issue) ==="
+    kubectl get clusterroles -o json | jq '.items[] | 
+      select(.rules[] | 
+        (.resources | if . then contains(["*"]) else false end) or
+        (.verbs | if . then contains(["*"]) else false end)
+      ) | .metadata.name'
+    
+    echo "=== Service Accounts with cluster-admin privileges ==="
+    kubectl get clusterrolebindings -o json | jq '.items[] | 
+      select(.roleRef.name == "cluster-admin") | 
+      .subjects[] | select(.kind == "ServiceAccount") | 
+      "\(.kind) \(.name) in namespace \(.namespace)"'
