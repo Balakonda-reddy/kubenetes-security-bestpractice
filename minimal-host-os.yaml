@@ -1,0 +1,102 @@
+# ╭──────────────────────────────────────────────────────────────────╮
+# │ NOTE: This is a reference implementation for educational purposes │
+# │ Please test thoroughly before applying to production environments │
+# ╰──────────────────────────────────────────────────────────────────╯
+
+# node-hardening-daemonset.yaml
+# DaemonSet to harden node OS configuration
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-hardening
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      name: node-hardening
+  template:
+    metadata:
+      labels:
+        name: node-hardening
+    spec:
+      hostPID: true
+      hostIPC: true
+      hostNetwork: true
+      containers:
+      - name: node-hardener
+        image: alpine:3.14
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Hardening node OS configuration..."
+          # Disable unused kernel modules
+          echo "blacklist sctp" > /host/etc/modprobe.d/blacklist-sctp.conf
+          echo "blacklist rds" > /host/etc/modprobe.d/blacklist-rds.conf
+          echo "blacklist tipc" > /host/etc/modprobe.d/blacklist-tipc.conf
+          
+          # Set read-only filesystem where possible
+          mount -o remount,ro /host/boot || true
+          
+          # Keep container running
+          sleep infinity
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: host-filesystem
+          mountPath: /host
+      volumes:
+      - name: host-filesystem
+        hostPath:
+          path: /
+---
+# distroless-application-example.yaml
+# Example deployment using distroless container images
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: secure-app
+  namespace: production
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: secure-app
+  template:
+    metadata:
+      labels:
+        app: secure-app
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+      - name: secure-app
+        image: gcr.io/distroless/nodejs:16
+        command: ["node", "app.js"]
+        resources:
+          limits:
+            cpu: "200m"
+            memory: "256Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+---
+# cos-node-configuration.yaml
+# Example of node configuration for Container-Optimized OS
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: cos
+handler: runc
+scheduling:
+  nodeSelector:
+    kubernetes.io/os: linux
+    node.kubernetes.io/image: cos
